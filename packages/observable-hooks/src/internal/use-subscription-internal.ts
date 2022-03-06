@@ -1,5 +1,5 @@
 import { Observable, PartialObserver, Subscription } from 'rxjs'
-import { useForceUpdate, useIsomorphicLayoutEffect } from '../helpers'
+import { useIsomorphicLayoutEffect } from '../helpers'
 import { MutableRefObject, useEffect, useRef } from 'react'
 
 type Args<TInput> = [
@@ -8,15 +8,6 @@ type Args<TInput> = [
   ((error: any) => void) | null | undefined,
   (() => void) | null | undefined
 ]
-
-const getObserver = <TInput>(args: Args<TInput>) =>
-  typeof args[1] === 'function' || args[1] === null || args[1] === undefined
-    ? {
-        next: args[1],
-        error: args[2],
-        complete: args[3]
-      }
-    : args[1]
 
 /**
  *
@@ -29,10 +20,7 @@ export function useSubscriptionInternal<TInput>(
   useCustomEffect: typeof useEffect,
   args: Args<TInput>
 ): MutableRefObject<Subscription | undefined> {
-  const forceUpdate = useForceUpdate()
-
   const argsRef = useRef(args)
-  const errorRef = useRef<Error | null>()
   const subscriptionRef = useRef<Subscription>()
 
   // Update the latest observable and callbacks
@@ -42,8 +30,6 @@ export function useSubscriptionInternal<TInput>(
   })
 
   useCustomEffect(() => {
-    errorRef.current = null
-
     // keep in closure for checking staleness
     const input$ = argsRef.current[0]
 
@@ -53,9 +39,11 @@ export function useSubscriptionInternal<TInput>(
           // stale observable
           return
         }
-        const observer = getObserver(argsRef.current)
-        if (observer.next) {
-          return observer.next(value)
+        const nextObserver =
+          (argsRef.current[1] as PartialObserver<TInput>)?.next ||
+          (argsRef.current[1] as ((value: TInput) => void) | null | undefined)
+        if (nextObserver) {
+          return nextObserver(value)
         }
       },
       error: error => {
@@ -63,22 +51,24 @@ export function useSubscriptionInternal<TInput>(
           // stale observable
           return
         }
-        const observer = getObserver(argsRef.current)
-        if (observer.error) {
-          errorRef.current = null
-          return observer.error(error)
+        const errorObserver =
+          (argsRef.current[1] as PartialObserver<TInput>)?.error ||
+          argsRef.current[2]
+        if (errorObserver) {
+          return errorObserver(error)
         }
-        errorRef.current = error
-        forceUpdate()
+        console.error(error)
       },
       complete: () => {
         if (input$ !== argsRef.current[0]) {
           // stale observable
           return
         }
-        const observer = getObserver(argsRef.current)
-        if (observer.complete) {
-          return observer.complete()
+        const completeObserver =
+          (argsRef.current[1] as PartialObserver<TInput>)?.complete ||
+          argsRef.current[3]
+        if (completeObserver) {
+          return completeObserver()
         }
       }
     })
@@ -89,11 +79,6 @@ export function useSubscriptionInternal<TInput>(
       subscription.unsubscribe()
     }
   }, [args[0]])
-
-  if (errorRef.current) {
-    // Let error boundary catch the error
-    throw errorRef.current
-  }
 
   return subscriptionRef
 }

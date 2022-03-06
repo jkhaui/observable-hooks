@@ -2,6 +2,7 @@ import { useObservableState, identity } from '../src'
 import { renderHook, act } from '@testing-library/react-hooks'
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs'
 import { map, scan } from 'rxjs/operators'
+import { mockConsoleError } from './utils'
 
 describe('useObservableState', () => {
   describe('with init function', () => {
@@ -53,16 +54,37 @@ describe('useObservableState', () => {
 
     it('should get the init state of BehaviorSubject without initialState', () => {
       const value$ = new BehaviorSubject('22')
-      const { result } = renderHook(() => useObservableState(value$))
+      const renderTimes = jest.fn()
+      const { result } = renderHook(() => {
+        const result = useObservableState(value$)
+        renderTimes(result)
+        return result
+      })
       expect(result.current).toBe('22')
+      expect(renderTimes).toHaveBeenCalledTimes(1)
+      expect(renderTimes).toHaveBeenLastCalledWith('22')
     })
 
     it('should ignore the manual initialState for BehaviorSubject', () => {
       const value$ = new BehaviorSubject('22')
-      const { result } = renderHook(() =>
-        useObservableState(value$, 'initialState')
-      )
+      const renderTimes = jest.fn()
+      const { result } = renderHook(() => {
+        const result = useObservableState(value$, 'initialState')
+        renderTimes(result)
+        return result
+      })
       expect(result.current).toBe('22')
+      expect(renderTimes).toBeCalledTimes(1)
+      expect(renderTimes).toHaveBeenLastCalledWith('22')
+
+      act(() => value$.next('22'))
+      expect(result.current).toBe('22')
+      expect(renderTimes).toBeCalledTimes(1)
+
+      act(() => value$.next('33'))
+      expect(result.current).toBe('33')
+      expect(renderTimes).toBeCalledTimes(2)
+      expect(renderTimes).toHaveBeenLastCalledWith('33')
     })
 
     it('should ignore the given init state when Observable also emits sync values', () => {
@@ -70,12 +92,15 @@ describe('useObservableState', () => {
       expect(result.current[0]).toBe(2)
     })
 
-    it('should throw error when observable emits error', () => {
-      const { result } = renderHook(() =>
-        useObservableState(() => throwError(new Error('oops')))
-      )
-      expect(result.error).toBeInstanceOf(Error)
-      expect(result.error.message).toBe('oops')
+    it('should log error when observable emits error', () => {
+      return mockConsoleError(consoleError => {
+        const { result } = renderHook(() =>
+          useObservableState(() => throwError(new Error('oops')))
+        )
+        expect(result.error).toBeUndefined()
+        expect(consoleError).toBeCalledTimes(1)
+        expect(consoleError.mock.calls[0][0].message).toBe('oops')
+      })
     })
 
     it('should support reducer pattern', () => {
@@ -178,11 +203,14 @@ describe('useObservableState', () => {
       expect(result.current).toBe(2)
     })
 
-    it('should throw error when observable emits error', () => {
-      const outer$ = throwError(new Error('oops'))
-      const { result } = renderHook(() => useObservableState(outer$, 3))
-      expect(result.error).toBeInstanceOf(Error)
-      expect(result.error.message).toBe('oops')
+    it('should log error when observable emits error', () => {
+      return mockConsoleError(consoleError => {
+        const outer$ = throwError(new Error('oops'))
+        const { result } = renderHook(() => useObservableState(outer$, 3))
+        expect(result.error).toBeUndefined()
+        expect(consoleError).toBeCalledTimes(1)
+        expect(consoleError.mock.calls[0][0].message).toBe('oops')
+      })
     })
   })
 })

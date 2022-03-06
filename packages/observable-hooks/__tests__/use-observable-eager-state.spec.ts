@@ -51,7 +51,7 @@ describe('useObservableEagerState', () => {
     expect(result.current).toBe(3)
   })
 
-  it('should subscribe the twice by dafult', () => {
+  it('should subscribe the twice by default', () => {
     const spy = jest.fn()
     const outer$$ = of(1).pipe(tap(spy))
     const { result } = renderHook(() => useObservableEagerState(outer$$))
@@ -64,5 +64,23 @@ describe('useObservableEagerState', () => {
     const { result } = renderHook(() => useObservableEagerState(outer$))
     expect(result.error).toBeInstanceOf(Error)
     expect(result.error.message).toBe('oops')
+  })
+
+  it('should not ignore sync emission between the two subscriptions', () => {
+    const spy = jest.fn()
+    const outer$ = new BehaviorSubject(1)
+    let isInvokedSideEffect = false
+    const { result } = renderHook(() => {
+      const state = useObservableEagerState(outer$)
+      if (!isInvokedSideEffect) {
+        isInvokedSideEffect = true
+        outer$.next(2)
+      }
+      spy(state)
+      return state
+    })
+    expect(result.current).toBe(2)
+    expect(spy).toHaveBeenCalledTimes(2)
+    expect(spy).toHaveBeenCalledWith(2)
   })
 })
